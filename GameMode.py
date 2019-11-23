@@ -1,6 +1,6 @@
 import sys
 import wave
-from Pyaudio import *
+from playsound import playsound
 from cmu_112_graphics import * #Taken from course website
 from tkinter import *
 from PIL import Image
@@ -10,16 +10,18 @@ print(f'{sys.executable} -m pip install requests')
 
 class GameMode(Mode):
     def appStarted(mode):
-        #mode.music=mode.app.loadFileName.gameMusic
-        #mode.lenMusic=length of Music
-        #^Implemented when we get files working
-        mode.player=Player(0,0,10)
+        mode.music=None #mode.app.loadFileMode.gameMusic
+        #playsound(mode.music)
+        mode.player=Player(0,0,20)
         mode.g=10
+        mode.vanishingpoint=mode.height/3
         mode.gameOver=False
         mode.timer=0
         mode.landBlocks=set()
         #Arbitrary tester landMass
-        mode.landMass1=landMass(-30, 30, -30, 30, mode.landBlocks)
+        mode.landMass1=landMass(-300, 300, 0, 300, mode.landBlocks)
+        mode.landMass2=landMass(-300, 300, 305, 605, mode.landBlocks)
+        mode.landMass3=landMass(-300, 300, 610, 910, mode.landBlocks)
     def keyPressed(mode, event):
         if mode.gameOver==False:
             if event.key=="Space":
@@ -31,9 +33,9 @@ class GameMode(Mode):
             elif event.key=="s":
                 mode.player.duck()
     def timerFired(mode):
-        print(mode.gameOver, mode.player.y)
         if mode.gameOver==False:
-            mode.player.y+=1
+            mode.player.y+=5
+            print(mode.player.y)
             if mode.player.z<= 20 and not mode.isOnTop():
                 mode.player.supported=False
                 mode.gameOver=True
@@ -56,19 +58,18 @@ class GameMode(Mode):
                         mode.player.upv=0
                 else: 
                     if mode.isOnTop():
-                        print("D")
                         mode.player.supported=True
     def isOnTop(mode):
         for block in mode.landBlocks: #Checks if player is supported
-            if (block.y0<mode.player.y<block.y1) or \
-                (block.y0>mode.player.y>block.y1):
+            if ((block.y0<mode.player.y<block.y1) or \
+                (block.y0>mode.player.y>block.y1)) and\
+                     (block.x0<mode.player.x<block.x1):
                 return True
         return False
     def redrawAll(mode, canvas):
+        for block in mode.landBlocks:
+            block.draw(canvas, mode)
         x,z=mode.player.x, mode.player.z
-        canvas.create_polygon(0, mode.height, mode.width, \
-            mode.height, mode.width*5/8, mode.height/3, mode.width*3/8,\
-                 mode.height/3, fill="gray")
         canvas.create_oval(mode.width/2-5+x,mode.height*5/6-5-z,\
             mode.width/2+5+x, mode.height*5/6+5-z)
 class landMass(object):
@@ -84,8 +85,22 @@ class landMass(object):
     def __hash__(self):
         return hash((self.x0, self.x1, self.y0, self.y1))
     def draw(self, canvas, mode):
-        closeEdgeD=self.y0
-        farEdgeD=self.y1
+        vanishingpt=mode.vanishingpoint
+        ratio=(mode.width/2)/(mode.height-vanishingpt)
+        leftCenterOffset=self.x0
+        rightCenterOffset=self.x1
+        closeEdgeMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
+            ((self.y0-mode.player.y)/100) #120 is coordintate of dot
+        farEdgeMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
+            ((self.y1-mode.player.y)/100) #100 is random
+        closeEdgeLeftMap=mode.width/2-ratio*(closeEdgeMap-vanishingpt)
+        closeEdgeRightMap=mode.width/2+ratio*(closeEdgeMap-vanishingpt)
+        farEdgeLeftMap=mode.width/2-ratio*(farEdgeMap-vanishingpt)
+        farEdgeRightMap=mode.width/2+ratio*(farEdgeMap-vanishingpt)
+        canvas.create_polygon(closeEdgeLeftMap, closeEdgeMap, \
+        closeEdgeRightMap, closeEdgeMap, farEdgeRightMap,\
+             farEdgeMap, farEdgeLeftMap, \
+                 farEdgeMap, fill="gray")
 class Player(object):
     def __init__(self,x,y,z):
         self.x=x

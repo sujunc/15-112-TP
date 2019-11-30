@@ -33,6 +33,7 @@ class GameMode(Mode):
             mode.musicLoaded=True
         else: mode.musicLoaded=False
         mode.beats=detectBeat(mode.music)
+        mode.possibleObstacles=[]
         mode.tempo=mode.beats[1]-mode.beats[0]
         mode.vi=70
         mode.g=10
@@ -50,14 +51,18 @@ class GameMode(Mode):
              #       mode.tempo*mode.speed/(8*mode.i),\
               #  1000*mode.i+mode.beats[beat]*mode.speed, mode.landBlocks)
         landMass(-50,50,0, 500, mode.landBlocks) #For testing
-        #LaserGrid(0,150,0, mode.obstacles, mode)
-        CornerPiece(-50, 50, 515, 800, mode.landBlocks, 300, "left")
-        #landMass(50, 350, 700, 800, mode.landBlocks)
+        landMass(-50, 50, 515, 800, mode.landBlocks)
+        landMass(50, 350, 700, 800, mode.landBlocks)
+        landMass(-300, -100, 434, 623, mode.landBlocks)
+    def generateTerrain(mode):
+        pass
+    def generateObstacles(mode):
+        pass
     def packSprite(mode, image, frames):
         spriteList=[]
         width, height=image.size
         hr=220/height #Music Theory jokes
-        scale=mode.scaleImage(image, hr) #Scales the image to be 20 pxls
+        scale=mode.scaleImage(image, hr) #Scales the image to be 220 pxls
         w, h=scale.size
         for i in range(frames):
             sprite=scale.crop((i*w/frames, 0, (i+1)*w/frames, h))
@@ -83,12 +88,6 @@ class GameMode(Mode):
                 mode.player.turnRight(mode)
     def clearObstacles(mode): #Checks if clears obstacles based on location, etc
         for obstacle in mode.obstacles:
-            print(obstacle.cx-obstacle.width/2,obstacle.cx+obstacle.width/2,\
-                mode.player.x-mode.player.width/2,mode.player.x+mode.player.width/2)
-            print(obstacle.cy-obstacle.depth/2,obstacle.cy+obstacle.depth/2,\
-                mode.player.y-mode.player.depth,mode.player.y+mode.player.depth)
-            print(obstacle.cz, obstacle.cz+obstacle.height, \
-                mode.player.z-mode.player.height, mode.player.z+mode.player.z)
             if (((obstacle.cx-obstacle.width/2<mode.player.x-\
                 mode.player.width/2<\
                 obstacle.cx+obstacle.width/2) or (obstacle.cx-obstacle.width/2\
@@ -98,20 +97,20 @@ class GameMode(Mode):
                 ((obstacle.cy-obstacle.depth/2<mode.player.y-\
                     mode.player.depth/2\
                 <obstacle.cy+obstacle.depth/2) or (obstacle.cy-obstacle.depth/2\
-                <mode.player.y+mode.player.depth/2<obstacle.cy+obstacle.depth/2))\
-                     and \
+                <mode.player.y+mode.player.depth/2<obstacle.cy+\
+                    obstacle.depth/2)) and \
                 ((obstacle.cz<mode.player.z-mode.player.height<\
                     obstacle.cz+obstacle.height) or \
                     (obstacle.cz<mode.player.z+mode.player.z\
                         <obstacle.cz+obstacle.height))):
-                return False
+                return obstacle
         return True
     def timerFired(mode):
         if mode.gameOver==False:
             mode.movePlayer() #Increments by steady run speed
             mode.score+=int(mode.speed/2) #Adds int score to player.
             mode.runCounter+=1 #Loops through sprite
-            if mode.clearObstacles()==False:
+            if mode.clearObstacles()!=True:
                 mode.gameOver=True
             mode.passObstacles()
             if mode.musicLoaded==False:
@@ -174,7 +173,14 @@ class GameMode(Mode):
                  mode.height, fill="gray"+str(40-i), outline="gray"+str(40-i))
         for block in mode.landBlocks:
             block.draw(canvas, mode)
-        mode.orderedDrawing(canvas)
+        if mode.gameOver==False:
+            mode.orderedDrawing(canvas)
+        else:
+            pass
+            #if mode.clearObstacles()!=True:
+                #mode.player.drawDeathSequence(mode.clearObstacles(), mode)
+            #elif mode.isOnTop==False:
+                #mode.player.drawDeathSequence("fall")
         canvas.create_rectangle(0,0,mode.width/5,mode.height/8,fill="slategray")
     def orderedDrawing(mode, canvas): #Draws it differently if player passed
         if len(mode.obstacles)==0:
@@ -192,51 +198,86 @@ class Obstacles(object): #will have more subclasses later
         self.cx=cx
         self.cy=cy
         self.cz=cz
+        self.apparentcx=self.cx
+        self.apparentcy=self.cy
         self.cleared=False
+        self.type=None
         set.add(self)
+    def __eq__(self, other):
+        if isinstance(other, Obstacles):
+            return ((self.cx==other.cx) and (self.cy==other.cy) and \
+                (self.cz==self.cz) and (self.cleared==other.cleared)\
+                     and self.type==other.type))
+    def __hash(self):
+        return hash(self.getHashables())
+    def getHashables():
+        return (self.cx, self.cy, self.cz, self.cleared, self.type)
     def draw(self, canvas, mode):
         vanishingpt=mode.vanishingpoint
         ratio=(mode.width/2)/(mode.height-vanishingpt)
         yMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
             ((self.cy-mode.player.y)/100) #120 is coordintate of player
-        x, y=self.image.size
-        scaleAtPoint=2*ratio*(yMap-vanishingpt)
+        image=self.frontImage.size ### change this line
+        x, y=image
+        scaleAtPoint=2*ratio*(yMap-vanishingpt)###change this later
         image=mode.scaleImage(self.image, scaleAtPoint/x)
         canvas.create_image(mode.width/2, yMap, \
             image=ImageTk.PhotoImage(image))
+    
 class LaserGrid(Obstacles): #Will work on this after image is drawn
     def __init__(self, cx, cy, cz, set, mode):
         super().__init__(cx, cy, cz, set, mode)
         image="LaserGrid.png"
-        self.image=mode.loadImage(image)
-        self.depth=10
+        sideImage="laserGridSide.png"
+        self.type="LaserGrid"
+        self.frontImage=mode.loadImage(image)
+        self.leftImage=mode.loadImage(sideImage)
+        self.rightImage=mode.loadImage(sideImage)
+        self.depth=5
         self.width=100
-        self.height=100
+        self.height=75
+class Spikes(Obstacles):
+    def __init__(self, cx, cy, cz, set, mode):
+        super().__init__(cx, cy, cz, set, mode)
+        image="Spikes Front.png"
+        leftImg="SpikesLeft.png"
+        rightImg="SpikesRight.png"
+        self.type="Spikes"
+        self.frontImage=mode.loadImage(image)
+        self.leftImage=mode.loadImage(leftImg)
+        self.rightImage=mode.loadImage(rightImg)
+        self.depth=3
+        self.width=25
+        self.height=25
 class landMass(object):
     def __init__(self,x0, x1, y0, y1, set):
-        self.x0=x0
-        self.x1=x1
+        self.x0=x0 #The true coordinates on a real map
+        self.x1=x1 
         self.y0=y0
         self.y1=y1
-        self.apparentX0=self.x0
-        self.apparentX1=self.x1
+        self.apparentX0=self.x0 #The "Apparent" coordinates, which is used for 
+        self.apparentX1=self.x1 #drawing
         self.apparentY0=self.y0
         self.apparentY1=self.y1
-        self.type="StraightPiece"
         set.add(self)
     def __eq__(self, other):
         return isinstance(other, landMass) and self.x0==other.x0 and \
-            self.x1==other.x1 and self.y0==other.y0 and self.y1==other.y1 and \
-                self.type==other.type
+            self.x1==other.x1 and self.y0==other.y0 and self.y1==other.y1 
     def __hash__(self):
-        return hash((self.x0, self.x1, self.y0, self.y1, self.type))
+        return hash(self.getHashables())
+    def getHashables(self):
+        return (self.x0, self.x1, self.y0, self.y1)
     def onTop(self, mode):
         return (((self.y0<mode.player.y<self.y1) or \
                 (self.y0>mode.player.y>self.y1)) and\
                      (self.x0<mode.player.x<self.x1))
-    def draw(self, canvas, mode):
-        vanishingpt=mode.vanishingpoint
-        ratio=(mode.width/2)/(mode.height-vanishingpt)
+    def draw(self, canvas, mode): #Draws Trapazoid
+        #Takes each coordinate given (assumes that the terrain is rectangular)
+        #and based on distance to the player, finds a point between the player 
+        #and the vanishingpt to place the coordinate.Such a mapping is isometric
+        vanishingpt=mode.vanishingpoint #As defined in appStarted
+        ratio=(mode.width/2)/(mode.height-vanishingpt) 
+        #^calculates 1/m, m being slope
         closeEdgeMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
             ((self.apparentY0-mode.player.apparentY)/100) #120 is coordintate of player
         farEdgeMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
@@ -252,109 +293,6 @@ class landMass(object):
         canvas.create_polygon(closeEdgeLeftMap, closeEdgeMap, \
         closeEdgeRightMap, closeEdgeMap, farEdgeRightMap,\
              farEdgeMap, farEdgeLeftMap, farEdgeMap, fill="gray")
-class CornerPiece(landMass):
-    def __init__(self,x0, x1, y0, y1, set, superWidth, dir):
-        super().__init__(x0, x1, y0, y1, set)
-        self.type="CornerPiece"
-        self.superWidth=superWidth
-        self.dir=dir
-        if self.dir=="left":
-            self.extendX0=self.x1-self.superWidth
-            self.extendX1=self.x1
-            self.extendY0=self.y1-(self.x1-self.x0)
-            self.extendY1=self.y1
-            self.apparentExtendX0=self.extendX0
-            self.apparentExtendX1=self.extendX1
-            self.apparentExtendY0=self.extendY0
-            self.apparentExtendY1=self.extendY1
-        elif self.dir=="right":
-            self.extendX0=self.x0
-            self.extendX1=self.x0+self.superWidth
-            self.extendY0=self.y1-(self.x1-self.x0)
-            self.extendY1=self.y1
-            self.apparentExtendX0=self.extendX0
-            self.apparentExtendX1=self.extendX1
-            self.apparentExtendY0=self.extendY0
-            self.apparentExtendY1=self.extendY1
-        self.rotationZone=(self.x0, self.x1, self.y1-(self.x1-self.x0), self.y1)
-    def onTop(self, mode):
-        if ((self.y0<mode.player.y<self.y1) or (self.y0>mode.player.y>self.y1))\
-        and ((self.x0<mode.player.x<self.x1) or (self.extendX0<mode.player.x<\
-             self.extendX1) or (self.extendX0>mode.player.x>self.extendX1)):
-             return True
-        else: return False
-
-    def draw(self, canvas, mode):
-        if self.dir=="left":
-            self.drawLeftPiece(canvas, mode)
-        elif self.dir=="right":
-            self.drawRightPiece(canvas, mode)
-    def drawLeftPiece(self, canvas, mode):
-        vanishingpt=mode.vanishingpoint
-        ratio=(mode.width/2)/(mode.height-vanishingpt)
-        closeEdgeMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
-            ((self.apparentY0-mode.player.apparentY)/100) #120 is coordinate of player
-        farEdgeMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
-            ((self.apparentY1-mode.player.apparentY)/100) #100 is random
-        closeEdgeLeftMap=mode.width/2+ratio*(closeEdgeMap-vanishingpt)*\
-            (self.apparentX0-mode.player.apparentX)/100
-        closeEdgeRightMap=mode.width/2+ratio*(closeEdgeMap-vanishingpt)*\
-            (self.apparentX1-mode.player.apparentX)/100
-        closerPerpEdgeMapY=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
-            ((self.apparentExtendY0-mode.player.apparentY)/100) #Y of closer edge
-        farEdgeFarLeftMap=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
-            (self.apparentExtendX0-mode.player.apparentX)/100
-        farEdgeRightMap=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
-            (self.apparentExtendX1-mode.player.apparentX)/100
-        closeFarLeftMapX=mode.width/2+ratio*(closerPerpEdgeMapY-vanishingpt)*\
-            (self.apparentExtendX0-mode.player.apparentX)/100 
-        farCloseEdgeMap=mode.width/2+ratio*(closerPerpEdgeMapY-vanishingpt)*\
-            (self.apparentExtendX1-mode.player.apparentX)/100
-        unseenLeftEdge=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
-            (self.apparentX0-mode.player.apparentX)/100
-        canvas.create_polygon(closeEdgeLeftMap,closeEdgeMap,closeEdgeRightMap,\
-            closeEdgeMap, farEdgeRightMap, farEdgeMap, unseenLeftEdge, \
-                farEdgeMap, fill="gray")
-        canvas.create_polygon(closeFarLeftMapX, closerPerpEdgeMapY, \
-            farCloseEdgeMap, closerPerpEdgeMapY, farEdgeRightMap, \
-                farEdgeMap, farEdgeFarLeftMap, farEdgeMap, fill="gray")
-        print(farEdgeMap)
-    def drawRightPiece(self, canvas, mode):
-        vanishingpt=mode.vanishingpoint
-        ratio=(mode.width/2)/(mode.height-vanishingpt)
-        closeEdgeMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
-            ((self.apparentY0-mode.player.apparentY)/100) #120 is coordinate of player
-        farEdgeMap=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
-            ((self.apparentY1-mode.player.apparentY)/100) #100 is random
-        closeEdgeLeftMap=mode.width/2+ratio*(closeEdgeMap-vanishingpt)*\
-            (self.apparentX0-mode.player.apparentX)/100
-        closeEdgeRightMap=mode.width/2+ratio*(closeEdgeMap-vanishingpt)*\
-            (self.apparentX1-mode.player.apparentX)/100
-        closerPerpEdgeMapY=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
-            ((self.apparentExtendY0-mode.player.apparentY)/100) #Y of closer edge
-        farEdgeFarRightMap=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
-            (self.apparentExtendX1-mode.player.apparentX)/100
-        farEdgeLeftMap=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
-            (self.apparentExtendX0-mode.player.apparentX)/100
-        closeLeftMapX=mode.width/2+ratio*(closerPerpEdgeMapY-vanishingpt)*\
-            (self.apparentExtendX0-mode.player.apparentX)/100 
-        RightCloseEdgeMap=mode.width/2+ratio*(closerPerpEdgeMapY-vanishingpt)*\
-            (self.apparentExtendX1-mode.player.apparentX)/100
-        unseenRightEdge=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
-            (self.apparentX1-mode.player.apparentX)/100
-        canvas.create_polygon(closeEdgeLeftMap,closeEdgeMap,closeEdgeRightMap,\
-            closeEdgeMap, unseenRightEdge,farEdgeMap,farEdgeLeftMap, \
-                farEdgeMap, fill="gray")
-        canvas.create_polygon(closeLeftMapX, closerPerpEdgeMapY, \
-        RightCloseEdgeMap,closerPerpEdgeMapY,farEdgeFarRightMap, farEdgeMap,\
-                farEdgeLeftMap, farEdgeMap, fill="gray")
-        print("Piece 1:", closeEdgeLeftMap,closeEdgeMap,closeEdgeRightMap,\
-            closeEdgeMap, unseenRightEdge,farEdgeMap,farEdgeLeftMap, \
-                farEdgeMap)
-        print("Piece 2:", closeLeftMapX, closerPerpEdgeMapY, \
-        RightCloseEdgeMap,closerPerpEdgeMapY,farEdgeFarRightMap, farEdgeMap,\
-                farEdgeLeftMap, farEdgeMap)
-        print(mode.player.dir)
         
 class Player(object):
     def __init__(self,x,y,z,R,D,J, mode):
@@ -380,46 +318,32 @@ class Player(object):
         self.supported=True
         self.upv=0 #Current vertical velocity
     def turnLeft(self, mode):
-        block=mode.isOnTop()
-        if isinstance(block, CornerPiece) and block.dir=="left":
-            (x0, x1, y0, y1)=block.rotationZone
-            if x0<self.x<x1 and y0<self.y<y1:
-                self.apparentX, self.apparentY=self.apparentY, -self.apparentX
-                self.dir=(self.dir+1)%4
-                for block in mode.landBlocks:
-                    block.apparentX0, block.apparentX1, block.apparentY0,\
-                    block.apparentY1=block.apparentY0, block.apparentY1,\
-                            -block.apparentX0, -block.apparentX1
-                    if isinstance(block, CornerPiece):
-                        block.apparentExtendX0, block.apparentExtendX1, \
-                        block.apparentExtendY0, block.apparentExtendY1=\
-                            block.apparentExtendY0, block.apparentExtendY1,\
-                                -block.apparentExtendX0, -block.apparentExtendX1
-    def turnRight(self, mode):
-        block=mode.isOnTop()
-        if isinstance(block, CornerPiece) and block.dir=="right":
-            (x0, x1, y0, y1)=block.rotationZone
-            if x0<self.x<x1 and y0<self.y<y1:
-                self.apparentX, self.apparentY=-self.apparentY, self.apparentX
-                self.dir=(self.dir-1)%4
-                for block in mode.landBlocks:
-                    block.apparentX0, block.apparentX1, block.apparentY0, \
-                    block.apparentY1=-block.apparentY1,-block.apparentY0,\
-                        block.apparentX0, block.apparentX1
-                    if isinstance(block, CornerPiece):
-                        block.apparentExtendX0, block.apparentExtendX1, \
-                        block.apparentExtendY0, block.apparentExtendY1=\
-                        -block.apparentExtendY0, -block.apparentExtendY1,\
-                            block.apparentExtendX0, block.apparentExtendX1
+        block=mode.isOnTop() #finds block player is on
+        self.apparentX, self.apparentY=self.apparentY, -self.apparentX
+        self.dir=(self.dir+1)%4
+        for block in mode.landBlocks:
+            block.apparentX0, block.apparentX1, block.apparentY0,\
+            block.apparentY1=block.apparentY0, block.apparentY1,\
+                    -block.apparentX0, -block.apparentX1
+        #Note: This is linear algebra. Please recognize the amount of work \
+        #I put into this
+    def turnRight(self, mode): #works similiarly to turnLeft
+        block=mode.isOnTop() 
+        self.apparentX, self.apparentY=-self.apparentY, self.apparentX
+        self.dir=(self.dir-1)%4
+        for block in mode.landBlocks:
+            block.apparentX0, block.apparentX1, block.apparentY0, \
+            block.apparentY1=-block.apparentY1,-block.apparentY0,\
+                block.apparentX0, block.apparentX1
 
     def jump(self, ground,g, vi): #Is basically just physics
-        if self.supported==True:
-            self.supported=False
-            self.mode="jump"
-            self.upv+=vi
-            self.z+=self.upv
+        if self.supported==True: #If you are on a platform
+            self.supported=False #You're leaving the platform
+            self.mode="jump" 
+            self.upv+=vi #adds upward velocity by initial velocity
+            self.z+=self.upv #adds the velocity to vertical position
             self.width,self.height, self.depth=self.jumpWidth, self.jumpHeight,\
-                 self.jumpDepth
+                 self.jumpDepth #reassign dimensions to jump sprite
     def duck(self): #Changes player dimensions 
         if self.mode!="duck":
             self.mode="duck"
@@ -428,11 +352,12 @@ class Player(object):
     def getRad(self, L, mode): #Gets the dimensions of the sprite images
         if len(L)==0:
             return None
-        else: 
+        else: #Returns the "radius" of player sprite
             width, height=L[0].size
-            return width/2, height/2, height/4
+            return width/2, height/2, height/4 
     def drawPlayer(self, mode, canvas):
         x,z=self.renderX, self.z
+        #uses a different image for running, jumping, and ducking
         if self.mode=="run":
             canvas.create_image(mode.width/2+x,mode.height-z-100-55, \
             image=ImageTk.PhotoImage(mode.runSprites[mode.runCounter%4]))
@@ -443,6 +368,18 @@ class Player(object):
             canvas.create_image(mode.width/2+x, mode.height-z-100-55, \
                 image=ImageTk.PhotoImage(mode.duckSprites[0]))
             #^Numbers: the canvas offset plus a quarter of the size of the image
+    def drawDeathSequence(methodOfDeath, mode):
+        if isinstance(methodOfDeath, str):
+            pass
+        elif isinstance(methodOfDeath, LaserGrid):
+            image="LaserGridDeath.png"
+            DeathByLaserGrid=mode.packSprite(image, 1)
+            for frame in DeathByLaserGrid:
+                canvas.create_image(mode.width/2+x,mode.height-z-100-55, \
+                image=ImageTk.PhotoImage(frame))
+        elif isinstance(methodOfDeath, Spike):
+            pass
+
             
 
 #class MyMusic(Thread): 

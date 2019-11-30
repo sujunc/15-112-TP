@@ -52,7 +52,7 @@ class GameMode(Mode):
         landMass(-50,50,0, 500, mode.landBlocks) #For testing
         #LaserGrid(0,150,0, mode.obstacles, mode)
         CornerPiece(-50, 50, 515, 800, mode.landBlocks, 300, "left")
-        #landMass(-500, -50, 700, 800, mode.landBlocks)
+        #landMass(50, 350, 700, 800, mode.landBlocks)
     def packSprite(mode, image, frames):
         spriteList=[]
         width, height=image.size
@@ -279,8 +279,10 @@ class CornerPiece(landMass):
         self.rotationZone=(self.x0, self.x1, self.y1-(self.x1-self.x0), self.y1)
     def onTop(self, mode):
         if ((self.y0<mode.player.y<self.y1) or (self.y0>mode.player.y>self.y1))\
-             and (self.x0<mode.player.x<self.x1):
+        and ((self.x0<mode.player.x<self.x1) or (self.extendX0<mode.player.x<\
+             self.extendX1) or (self.extendX0>mode.player.x>self.extendX1)):
              return True
+        else: return False
 
     def draw(self, canvas, mode):
         if self.dir=="left":
@@ -316,6 +318,7 @@ class CornerPiece(landMass):
         canvas.create_polygon(closeFarLeftMapX, closerPerpEdgeMapY, \
             farCloseEdgeMap, closerPerpEdgeMapY, farEdgeRightMap, \
                 farEdgeMap, farEdgeFarLeftMap, farEdgeMap, fill="gray")
+        print(farEdgeMap)
     def drawRightPiece(self, canvas, mode):
         vanishingpt=mode.vanishingpoint
         ratio=(mode.width/2)/(mode.height-vanishingpt)
@@ -327,7 +330,31 @@ class CornerPiece(landMass):
             (self.apparentX0-mode.player.apparentX)/100
         closeEdgeRightMap=mode.width/2+ratio*(closeEdgeMap-vanishingpt)*\
             (self.apparentX1-mode.player.apparentX)/100
-        
+        closerPerpEdgeMapY=vanishingpt+(mode.height-120-vanishingpt)*(2/3)**\
+            ((self.apparentExtendY0-mode.player.apparentY)/100) #Y of closer edge
+        farEdgeFarRightMap=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
+            (self.apparentExtendX1-mode.player.apparentX)/100
+        farEdgeLeftMap=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
+            (self.apparentExtendX0-mode.player.apparentX)/100
+        closeLeftMapX=mode.width/2+ratio*(closerPerpEdgeMapY-vanishingpt)*\
+            (self.apparentExtendX0-mode.player.apparentX)/100 
+        RightCloseEdgeMap=mode.width/2+ratio*(closerPerpEdgeMapY-vanishingpt)*\
+            (self.apparentExtendX1-mode.player.apparentX)/100
+        unseenRightEdge=mode.width/2+ratio*(farEdgeMap-vanishingpt)*\
+            (self.apparentX1-mode.player.apparentX)/100
+        canvas.create_polygon(closeEdgeLeftMap,closeEdgeMap,closeEdgeRightMap,\
+            closeEdgeMap, unseenRightEdge,farEdgeMap,farEdgeLeftMap, \
+                farEdgeMap, fill="gray")
+        canvas.create_polygon(closeLeftMapX, closerPerpEdgeMapY, \
+        RightCloseEdgeMap,closerPerpEdgeMapY,farEdgeFarRightMap, farEdgeMap,\
+                farEdgeLeftMap, farEdgeMap, fill="gray")
+        print("Piece 1:", closeEdgeLeftMap,closeEdgeMap,closeEdgeRightMap,\
+            closeEdgeMap, unseenRightEdge,farEdgeMap,farEdgeLeftMap, \
+                farEdgeMap)
+        print("Piece 2:", closeLeftMapX, closerPerpEdgeMapY, \
+        RightCloseEdgeMap,closerPerpEdgeMapY,farEdgeFarRightMap, farEdgeMap,\
+                farEdgeLeftMap, farEdgeMap)
+        print(mode.player.dir)
         
 class Player(object):
     def __init__(self,x,y,z,R,D,J, mode):
@@ -354,7 +381,7 @@ class Player(object):
         self.upv=0 #Current vertical velocity
     def turnLeft(self, mode):
         block=mode.isOnTop()
-        if isinstance(block, CornerPiece):
+        if isinstance(block, CornerPiece) and block.dir=="left":
             (x0, x1, y0, y1)=block.rotationZone
             if x0<self.x<x1 and y0<self.y<y1:
                 self.apparentX, self.apparentY=self.apparentY, -self.apparentX
@@ -370,7 +397,7 @@ class Player(object):
                                 -block.apparentExtendX0, -block.apparentExtendX1
     def turnRight(self, mode):
         block=mode.isOnTop()
-        if isinstance(block, CornerPiece):
+        if isinstance(block, CornerPiece) and block.dir=="right":
             (x0, x1, y0, y1)=block.rotationZone
             if x0<self.x<x1 and y0<self.y<y1:
                 self.apparentX, self.apparentY=-self.apparentY, self.apparentX
@@ -380,8 +407,8 @@ class Player(object):
                     block.apparentY1=-block.apparentY1,-block.apparentY0,\
                         block.apparentX0, block.apparentX1
                     if isinstance(block, CornerPiece):
-                    block.apparentExtendX0, block.apparentExtendX1, \
-                    block.apparentExtendY0, block.apparentExtendY1=\
+                        block.apparentExtendX0, block.apparentExtendX1, \
+                        block.apparentExtendY0, block.apparentExtendY1=\
                         -block.apparentExtendY0, -block.apparentExtendY1,\
                             block.apparentExtendX0, block.apparentExtendX1
 

@@ -1,4 +1,3 @@
-import sys
 import wave
 import pyaudio
 from threading import *
@@ -6,9 +5,7 @@ from AubioBeatDetection import *
 from cmu_112_graphics import * #Taken from course website
 from tkinter import *
 from PIL import Image
-import math
-print(f'{sys.executable} -m pip install pillow')
-print(f'{sys.executable} -m pip install requests')
+import math, random
 
 class GameMode(Mode):
     def appStarted(mode):
@@ -21,43 +18,198 @@ class GameMode(Mode):
         mode.player=Player(0,0,20, mode.runSprites, mode.duckSprites,\
              mode.jumpSprites, mode)
         mode.runCounter=0
+        mode.deathCounter=0
         mode.vanishingpoint=mode.height/3 #Arbitrary reference pt:2.5d graphics
         mode.gameOver=False
+        mode.app.gameWon=False
         mode.timer=0 #Tells how long to duck for
-        mode.landBlocks=set()
+        mode.landBlocks=dict()
         mode.musicLoaded=False
         mode.score=0
-        mode.obstacles=set()
+        mode.obstacles=dict()
         if mode.app.gameMusic!="":
             mode.music=mode.app.gameMusic
             mode.musicLoaded=True
         else: mode.musicLoaded=False
-        mode.beats=detectBeat(mode.music)
         mode.possibleObstacles=[]
-        mode.tempo=mode.beats[1]-mode.beats[0]
         mode.vi=70
         mode.g=10
         mode.speed=15
         mode.i=1
-        if mode.vi/mode.g>2:
-            mode.i=int(mode.vi/mode.g*2)
-        #Code commented out is a little buggy, 
-        #for beat in range(0,len(mode.beats),mode.i): 
-         #   if beat==0:
-          #      landMass(-300,300,0,1000*mode.i+mode.beats[0]*mode.speed,\
-           #         mode.landBlocks)
-           # else: landMass(-300, 300, \
-            #    1000*mode.i+mode.beats[beat-1]*mode.speed+\
-             #       mode.tempo*mode.speed/(8*mode.i),\
-              #  1000*mode.i+mode.beats[beat]*mode.speed, mode.landBlocks)
-        landMass(-50,50,0, 500, mode.landBlocks) #For testing
-        landMass(-50, 50, 515, 800, mode.landBlocks)
-        landMass(50, 350, 700, 800, mode.landBlocks)
-        landMass(-300, -100, 434, 623, mode.landBlocks)
-    def generateTerrain(mode):
-        pass
+        mode.timeInAir=2*mode.vi/mode.g
+        mode.unrefinedBeats=detectBeat(mode.music)
+        mode.beats=mode.refineBeats(mode.unrefinedBeats)
+        mode.generateObstacles()
+        mode.generateTerrain()
+    def generateTerrain(mode): #accounts for edge cases
+        startingBlock(-50, 50, 0, 300, mode.landBlocks, 0, mode.unrefinedBeats)
+        landMass(-50, 50, 300, 500, mode.landBlocks, 1)
+        #landMass(-500, -50, 400, 500, mode.landBlocks, 2)
+        if len(mode.beats)==0:
+            endingBlock(-50, 50, 350, 400, mode.landBlocks, 1, \
+                mode.unrefinedBeats)
+        elif len(mode.beats)==1:
+            landMass(-50, 50, 350, 400, mode.landBlocks, 1, \
+                mode.unrefinedBeats)
+            endingBlock(-50, 50, 450, mode.landBlocks, 2, mode.unrefinedBeats)
+        else: 
+            mode.generateMap()
+    def generateMap(mode):#You have a counter that keeps track of left and right
+        #This way, it makes sure that the map never self intersects
+        left=0
+        right=0
+        count=0 #makes sure that it is impossible to draw a left piece, \
+        #a straight piece, and then immediate draw another left piece
+        for beat in range(len(mode.beats)):
+            num=random.randint(0, 3)
+            print("LR", left, right, num, count)
+            if num==0: #Makes a piece that extends the path
+                mode.generate0Map(beat)
+                count+=1
+            elif num==1: #Makes a piece that extends the path, but has a gap
+                mode.generate1Map(beat)
+                count+=1
+            elif num==2: #makes a left piece
+                if left==right or left<right or count>1:
+                    mode.generate2Map(beat) #makes a left piece
+                    left+=1
+                    count=0
+                else:
+                    mode.generate0Map(beat)
+                    count+=1
+            elif num==3: #makes a right piece
+                if left==right or left>right or count>1:
+                    mode.generate3Map(beat) #makes right piece
+                    right+=1
+                    count=0
+                else:
+                    mode.generate1Map(beat) #makes left piece
+                    count+=1
+    def generate3Map(mode, beat):
+        key=len(mode.landBlocks)-1
+        block=mode.landBlocks[key]
+        width=abs(block.x1-block.x0)
+        height=abs(block.y1-block.y0)
+        if beat==0:
+            ref=0
+        else: ref=mode.beats[beat-1]
+        if width<height: #if it is a straight block
+            mode.landBlocks[key+1]=landMass(block.x1, \
+                block.x1+(mode.beats[beat]-ref)*mode.speed*10, block.y1-width, \
+                    block.y1, mode.landBlocks, key+1)
+        elif width>height: #if it is a sideways block
+            olderKey=len(mode.landBlocks)-2
+            olderBlock=mode.landBlocks[olderKey]
+            x0, x1, y0, y1=olderBlock.x0, olderBlock.x1, olderBlock.y0,\
+                olderBlock.y1
+            if block.x0==x1 or int((block.x0-105-x1)/10)==0:
+                #105 being the safe distance when jumping
+                mode.landBlocks[key+1]=landMass(block.x1-height, block.x1,\
+                     block.y0-(mode.beats[beat]-ref)*mode.speed*10, block.y0, \
+                    mode.landBlocks, key+1)
+            elif block.x1==x0 or int((block.x1+105-x0)/10)==0:
+                mode.landBlocks[key+1]=landMass(block.x0, block.x0+height, \
+                    block.y1, block.y1+(mode.beats[beat]-ref)*mode.speed*10, \
+                        mode.landBlocks, key+1)
+            else: print("It's map 3")
+    def generate2Map(mode, beat):
+        key=len(mode.landBlocks)-1
+        block=mode.landBlocks[key]
+        width=abs(block.x1-block.x0)
+        height=abs(block.y1-block.y0)
+        if beat==0:
+            ref=0
+        else: ref=mode.beats[beat-1]
+        if width<height: #if it is a straight block
+            mode.landBlocks[key+1]=landMass(block.x0-(mode.beats[beat]-ref)*\
+                mode.speed*10, block.x0, block.y1-width, block.y1, \
+                    mode.landBlocks, key+1)
+        elif width>height:
+            olderKey=len(mode.landBlocks)-2
+            olderBlock=mode.landBlocks[olderKey]
+            x0, x1, y0, y1=olderBlock.x0, olderBlock.x1, olderBlock.y0,\
+                olderBlock.y1
+            if block.x0==x1 or int((block.x0-105-x1)/10)==0:
+                #105 being the safe distance when jumping
+                mode.landBlocks[key+1]=landMass(block.x1-height, block.x1,\
+                     block.y1, block.y1+(mode.beats[beat]-ref)*mode.speed*10, \
+                    mode.landBlocks, key+1)
+            elif block.x1==x0 or int((block.x1+105-x0)/10)==0:
+                mode.landBlocks[key+1]=landMass(block.x0, block.x0+height, \
+                    block.y0-(mode.beats[beat]-ref)*mode.speed*10, block.y0, \
+                        mode.landBlocks, key+1)
+    def generate1Map(mode, beat):
+        key=len(mode.landBlocks)-1
+        block=mode.landBlocks[key]
+        width=abs(block.x1-block.x0)
+        height=abs(block.y1-block.y0)
+        if beat==0:
+            ref=0
+        else: ref=mode.beats[beat-1]
+        if width<height: #if it is a straight block #1/3 is arbitrary
+            mode.landBlocks[key+1]=landMass(block.x0, block.x1, \
+                block.y1+1/2*mode.timeInAir*mode.speed, block.y1+\
+                (mode.beats[beat]-ref)*mode.speed*10+1/2*mode.timeInAir\
+                    *mode.speed, mode.landBlocks,key+1)
+                    #mode.timeInAir*mode.speed=distance traveled while jumping
+        elif width>height:
+            olderKey=len(mode.landBlocks)-2
+            olderBlock=mode.landBlocks[olderKey]
+            x0, x1, y0, y1=olderBlock.x0, olderBlock.x1, olderBlock.y0,\
+                olderBlock.y1
+            if block.x0==x1 or int((block.x0-105-x1)/10)==0:
+                #105 being the safe distance when jumping
+                mode.landBlocks[key+1]=landMass(block.x1+\
+                    (1/2)*mode.timeInAir*mode.speed, block.x1+\
+                    (mode.beats[beat]-ref)*mode.speed*10+\
+                    (1/2)*mode.timeInAir*mode.speed, block.y0, block.y1, \
+                    mode.landBlocks, key+1)
+            elif block.x1==x0 or int((block.x1+105-x0)/10)==0:
+                mode.landBlocks[key+1]=landMass(block.x0-(mode.beats[beat]-ref)\
+                    *mode.speed*10-(1/2)*mode.timeInAir*mode.speed,\
+                        block.x0-(1/2)*mode.timeInAir*mode.speed, block.y0, \
+                            block.y1, mode.landBlocks, key+1)
+            else: print("map 1")
+    def generate0Map(mode, beat):
+        key=len(mode.landBlocks)-1
+        block=mode.landBlocks[key]
+        width=abs(block.x1-block.x0)
+        height=abs(block.y1-block.y0)
+        if beat==0:
+            ref=0
+        else:
+            ref=mode.beats[beat-1]
+        if width<height:
+            mode.landBlocks[key+1]=landMass(block.x0, block.x1, \
+                block.y1,block.y1+(mode.beats[beat]-ref)*mode.speed*10,\
+                    mode.landBlocks,key+1)
+        elif width>height:
+            olderKey=len(mode.landBlocks)-2
+            olderBlock=mode.landBlocks[olderKey]
+            x0, x1, y0, y1=olderBlock.x0, olderBlock.x1, olderBlock.y0,\
+                olderBlock.y1
+            if block.x0==x1 or int((block.x0-105-x1)/10)==0:
+                mode.landBlocks[key+1]=landMass(block.x1, block.x1+\
+                (mode.beats[beat]-ref)*mode.speed*10, block.y0, block.y1, \
+                    mode.landBlocks, key+1)
+            elif block.x1==x0 or int((block.x1+105-x0)/10)==0:
+                mode.landBlocks[key+1]=landMass(block.x0-(mode.beats[beat]-ref)\
+                    *mode.speed*10,block.x0, block.y0, block.y1, \
+                    mode.landBlocks, key+1)
+                print(block.y0, block.y1)
+            else: print("map 0")
     def generateObstacles(mode):
+        #LaserGrid(0, 200, 0, mode.obstacles, mode)
         pass
+    def refineBeats(mode, beats):
+        lst=[]
+        lst+=[beats[0]]
+        lastBeat=0
+        for beat in range(len(beats)):
+            if beats[beat]-beats[lastBeat]>=mode.timeInAir*(3/20):
+                lastBeat=beat #unit conversion
+                lst+=[beats[beat]]
+        return lst
     def packSprite(mode, image, frames):
         spriteList=[]
         width, height=image.size
@@ -73,11 +225,25 @@ class GameMode(Mode):
             if event.key=="Space":
                 mode.player.jump(0, mode.g, mode.vi) #Does physics on player
             elif event.key=="a":
-                mode.player.x-=5
+                if mode.player.dir==0:
+                    mode.player.x-=5
+                elif mode.player.dir==1:
+                    mode.player.y-=5
+                elif mode.player.dir==2:
+                    mode.player.x+=5
+                elif mode.player.dir==3:
+                    mode.player.y+=5
                 mode.player.apparentX-=5
                 mode.player.renderX-=5
             elif event.key=="d":
-                mode.player.x+=5
+                if mode.player.dir==0:
+                    mode.player.x+=5
+                elif mode.player.dir==1:
+                    mode.player.y+=5
+                elif mode.player.dir==2:
+                    mode.player.x-=5
+                elif mode.player.dir==3:
+                    mode.player.y-=5
                 mode.player.apparentX+=5
                 mode.player.renderX+=5
             elif event.key=="s":
@@ -87,7 +253,10 @@ class GameMode(Mode):
             elif event.key=="l":
                 mode.player.turnRight(mode)
     def clearObstacles(mode): #Checks if clears obstacles based on location, etc
-        for obstacle in mode.obstacles:
+        if len(mode.obstacles)==0:
+            return True
+        for key in range(len(mode.obstacles)):
+            obstacle=mode.obstacles[key]
             if (((obstacle.cx-obstacle.width/2<mode.player.x-\
                 mode.player.width/2<\
                 obstacle.cx+obstacle.width/2) or (obstacle.cx-obstacle.width/2\
@@ -130,6 +299,7 @@ class GameMode(Mode):
                 mode.player.z+=mode.player.upv
                 if mode.player.z<=20:
                     mode.player.mode="run"
+                    mode.player.upv=0
             elif mode.player.z<20:
                 #If the player's y falls inside the map's y, we know that 
                 #the player is on solid ground, so we can change the is 
@@ -143,12 +313,15 @@ class GameMode(Mode):
                 if mode.isOnTop()!=False:
                     mode.player.supported=True
                     mode.player.mode="run"
+        if mode.gameOver==True:
+            mode.deathCounter+=1
+            mode.app.setActiveMode(mode.app.gameOverMode)
     def movePlayer(mode):
         if mode.player.dir==0:
             mode.player.y+=mode.speed
             mode.player.apparentY+=mode.speed
         elif mode.player.dir==1:
-            mode.player.x-=mode.speed
+            mode.player.x-=mode.speed#Since apparent X and Y are switched
             mode.player.apparentY+=mode.speed
         elif mode.player.dir==2:
             mode.player.y-=mode.speed
@@ -159,29 +332,35 @@ class GameMode(Mode):
     def passObstacles(mode):
         for obstacle in mode.obstacles:
             if obstacle.cleared==False:
-                if mode.player.y>obstacle.cy+obstacle.depth:
+                if mode.player.apparentY>obstacle.cy+obstacle.depth:
                     obstacle.cleared=True
             
     def isOnTop(mode):
-        for block in mode.landBlocks: #Checks if player is supported
+        for key in range(len(mode.landBlocks)): #Checks if player is supported
+            block=mode.landBlocks[key]
+            print(block.x0, block.x1, block.y0, block.y1)
             if block.onTop(mode):
                 return block
+        print(len(mode.landBlocks))
         return False
     def redrawAll(mode, canvas):
         for i in range(0,40, 4): #Makes the background a gradiant
             canvas.create_rectangle(0,mode.height*i/40,mode.width,\
                  mode.height, fill="gray"+str(40-i), outline="gray"+str(40-i))
-        for block in mode.landBlocks:
-            block.draw(canvas, mode)
+        for block in range(len(mode.landBlocks)):
+            mode.landBlocks[block].draw(canvas, mode)
         if mode.gameOver==False:
             mode.orderedDrawing(canvas)
         else:
-            pass
-            #if mode.clearObstacles()!=True:
-                #mode.player.drawDeathSequence(mode.clearObstacles(), mode)
-            #elif mode.isOnTop==False:
-                #mode.player.drawDeathSequence("fall")
+            if mode.clearObstacles()!=True:
+                mode.player.drawDeathSequence(canvas, mode.clearObstacles(),\
+                     mode, mode.deathCounter)
+            elif mode.isOnTop()==False:
+                mode.player.drawDeathSequence(canvas, "fall", mode,\
+                     mode.deathCounter)
         canvas.create_rectangle(0,0,mode.width/5,mode.height/8,fill="slategray")
+        canvas.create_text(mode.width/10, mode.height/16, fill="white", text=\
+            f"{mode.score}")
     def orderedDrawing(mode, canvas): #Draws it differently if player passed
         if len(mode.obstacles)==0:
             mode.player.drawPlayer(mode, canvas)
@@ -207,10 +386,10 @@ class Obstacles(object): #will have more subclasses later
         if isinstance(other, Obstacles):
             return ((self.cx==other.cx) and (self.cy==other.cy) and \
                 (self.cz==self.cz) and (self.cleared==other.cleared)\
-                     and self.type==other.type))
-    def __hash(self):
+                     and (self.type==other.type))
+    def __hash__(self):
         return hash(self.getHashables())
-    def getHashables():
+    def getHashables(self):
         return (self.cx, self.cy, self.cz, self.cleared, self.type)
     def draw(self, canvas, mode):
         vanishingpt=mode.vanishingpoint
@@ -220,7 +399,7 @@ class Obstacles(object): #will have more subclasses later
         image=self.frontImage.size ### change this line
         x, y=image
         scaleAtPoint=2*ratio*(yMap-vanishingpt)###change this later
-        image=mode.scaleImage(self.image, scaleAtPoint/x)
+        image=mode.scaleImage(self.frontImage, scaleAtPoint/x)
         canvas.create_image(mode.width/2, yMap, \
             image=ImageTk.PhotoImage(image))
     
@@ -233,9 +412,10 @@ class LaserGrid(Obstacles): #Will work on this after image is drawn
         self.frontImage=mode.loadImage(image)
         self.leftImage=mode.loadImage(sideImage)
         self.rightImage=mode.loadImage(sideImage)
-        self.depth=5
+        self.depth=10
         self.width=100
         self.height=75
+    
 class Spikes(Obstacles):
     def __init__(self, cx, cy, cz, set, mode):
         super().__init__(cx, cy, cz, set, mode)
@@ -250,27 +430,30 @@ class Spikes(Obstacles):
         self.width=25
         self.height=25
 class landMass(object):
-    def __init__(self,x0, x1, y0, y1, set):
+    def __init__(self,x0, x1, y0, y1, dict, key):
         self.x0=x0 #The true coordinates on a real map
         self.x1=x1 
         self.y0=y0
         self.y1=y1
+        self.key=key
         self.apparentX0=self.x0 #The "Apparent" coordinates, which is used for 
         self.apparentX1=self.x1 #drawing
         self.apparentY0=self.y0
         self.apparentY1=self.y1
-        set.add(self)
+        self.color="gray"
+        dict[key]=self
     def __eq__(self, other):
         return isinstance(other, landMass) and self.x0==other.x0 and \
-            self.x1==other.x1 and self.y0==other.y0 and self.y1==other.y1 
+            self.x1==other.x1 and self.y0==other.y0 and self.y1==other.y1 and \
+                self.key==other.key
     def __hash__(self):
         return hash(self.getHashables())
     def getHashables(self):
-        return (self.x0, self.x1, self.y0, self.y1)
+        return (self.x0, self.x1, self.y0, self.y1, self.key)
     def onTop(self, mode):
-        return (((self.y0<mode.player.y<self.y1) or \
-                (self.y0>mode.player.y>self.y1)) and\
-                     (self.x0<mode.player.x<self.x1))
+        return (((self.y0<=mode.player.y<=self.y1) or \
+                (self.y0>=mode.player.y>=self.y1)) and\
+                     (self.x0<=mode.player.x<=self.x1))
     def draw(self, canvas, mode): #Draws Trapazoid
         #Takes each coordinate given (assumes that the terrain is rectangular)
         #and based on distance to the player, finds a point between the player 
@@ -292,8 +475,43 @@ class landMass(object):
             (self.apparentX1-mode.player.apparentX)/100
         canvas.create_polygon(closeEdgeLeftMap, closeEdgeMap, \
         closeEdgeRightMap, closeEdgeMap, farEdgeRightMap,\
-             farEdgeMap, farEdgeLeftMap, farEdgeMap, fill="gray")
-        
+             farEdgeMap, farEdgeLeftMap, farEdgeMap, fill=self.color)
+class startingBlock(landMass):
+    def __init__(self,x0, x1, y0, y1, dict, key, beats):
+        super().__init__(x0, x1, y0, y1, dict, key)
+        self.beats=beats
+        if len(self.beats)==0:
+            self.tempo=0
+        else: #tempo as measured by beats per minute
+            self.tempo=60*len(self.beats)/self.beats[-1] 
+        if self.tempo==0:
+            self.color="gray"
+        elif 40>self.tempo:
+            self.color="brown"
+        elif self.tempo>208:
+            self.color="slategray"
+        elif 40<=self.tempo<=50:
+            self.color="pink"
+        elif 50<self.tempo<=60:
+            self.color="peach puff"
+        elif 60<self.tempo<=72:
+            self.color="light yellow"
+        elif 72<self.tempo<80:
+            self.color="light green"
+        elif 80<=self.tempo<120:
+            self.color="light blue"
+        elif 120<=self.tempo<160:
+            self.color="plum"
+        else:
+            self.color="lavender"
+class EndingBlock(landMass):
+    def __init__(self,x0, x1, y0, y1, dict, key, beats):
+        super().__init__(x0, x1, y0, y1, dict, key)
+        self.beats=beats
+        if len(self.beats)==0:
+            self.tempo=0
+        else: #tempo as measured by beats per minute
+            self.tempo=60*len(self.beats)/self.beats[-1] 
 class Player(object):
     def __init__(self,x,y,z,R,D,J, mode):
         self.x=x
@@ -306,6 +524,10 @@ class Player(object):
         self.runSprite=R
         self.duckSprite=D
         self.jumpSprite=J
+        deathFallImage=mode.loadImage("Falling to your Death.png")
+        self.fallDeath=mode.packSprite(deathFallImage, 5)
+        laserGridDeath=mode.loadImage("LaserGridDeath.png")
+        self.laserGridDeath=mode.packSprite(laserGridDeath, 1)
         self.runWidth, self.runHeight, self.runDepth=\
             self.getRad(self.runSprite, mode) #Dimensions for player positions
         self.duckWidth, self.duckHeight, self.duckDepth=\
@@ -321,7 +543,8 @@ class Player(object):
         block=mode.isOnTop() #finds block player is on
         self.apparentX, self.apparentY=self.apparentY, -self.apparentX
         self.dir=(self.dir+1)%4
-        for block in mode.landBlocks:
+        for key in range(len(mode.landBlocks)):
+            block=mode.landBlocks[key]
             block.apparentX0, block.apparentX1, block.apparentY0,\
             block.apparentY1=block.apparentY0, block.apparentY1,\
                     -block.apparentX0, -block.apparentX1
@@ -331,7 +554,8 @@ class Player(object):
         block=mode.isOnTop() 
         self.apparentX, self.apparentY=-self.apparentY, self.apparentX
         self.dir=(self.dir-1)%4
-        for block in mode.landBlocks:
+        for key in range(len(mode.landBlocks)):
+            block=mode.landBlocks[key]
             block.apparentX0, block.apparentX1, block.apparentY0, \
             block.apparentY1=-block.apparentY1,-block.apparentY0,\
                 block.apparentX0, block.apparentX1
@@ -359,26 +583,28 @@ class Player(object):
         x,z=self.renderX, self.z
         #uses a different image for running, jumping, and ducking
         if self.mode=="run":
-            canvas.create_image(mode.width/2+x,mode.height-z-100-55, \
+            canvas.create_image(mode.width/2+x,mode.height-z-100-110, \
             image=ImageTk.PhotoImage(mode.runSprites[mode.runCounter%4]))
         elif self.mode=="jump":
-            canvas.create_image(mode.width/2+x, mode.height-z-100-55, \
+            canvas.create_image(mode.width/2+x, mode.height-z-100-110, \
                 image=ImageTk.PhotoImage(mode.jumpSprites[mode.runCounter%2]))
         elif self.mode=="duck":
-            canvas.create_image(mode.width/2+x, mode.height-z-100-55, \
+            canvas.create_image(mode.width/2+x, mode.height-z-100-110, \
                 image=ImageTk.PhotoImage(mode.duckSprites[0]))
             #^Numbers: the canvas offset plus a quarter of the size of the image
-    def drawDeathSequence(methodOfDeath, mode):
+    def drawDeathSequence(self, canvas, methodOfDeath, mode, counter):
+        x,z=self.renderX, self.z
         if isinstance(methodOfDeath, str):
-            pass
+            if methodOfDeath=="fall":
+                if counter<5:
+                    canvas.create_image(mode.width/2+x,mode.height-z-100-110, \
+                        image=ImageTk.PhotoImage(self.fallDeath[counter]))
         elif isinstance(methodOfDeath, LaserGrid):
-            image="LaserGridDeath.png"
-            DeathByLaserGrid=mode.packSprite(image, 1)
-            for frame in DeathByLaserGrid:
-                canvas.create_image(mode.width/2+x,mode.height-z-100-55, \
-                image=ImageTk.PhotoImage(frame))
+            canvas.create_image(mode.width/2+x,mode.height-z-100-110, \
+                image=ImageTk.PhotoImage(self.laserGridDeath[0]))
         elif isinstance(methodOfDeath, Spike):
-            pass
+            canvas.create_image(mode.width/2+x,mode.height-z-100-110, \
+             image=ImageTk.PhotoImage(self.duckSprite[0])) #Cutting corners
 
             
 
